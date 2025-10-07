@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "Phase1TemplateUrl",
+    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase1-networking.yaml"
+  },
+  {
+    "ParameterKey": "Phase2TemplateUrl",
+    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase2-compute.yaml"
+  },
+  {
+    "ParameterKey": "Phase3TemplateUrl",
+    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase3-data.yaml"
+  },
+  {
+    "ParameterKey": "Phase4TemplateUrl",
+    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase4-waf.yaml"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "DBMasterName",
+    "ParameterValue": "admin"
+  },
+  {
+    "ParameterKey": "CertificateArn",
+    "ParameterValue": "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  }
+]

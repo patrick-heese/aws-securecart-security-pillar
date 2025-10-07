@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: S3 bucket to store SecureCart nested templates (private, encrypted, versioned).
+
+Parameters:
+  BucketPrefix:
+    Type: String
+    Default: securecart-templates
+    Description: Prefix used to build the bucket name.
+
+Resources:
+  TemplatesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  TemplatesBucketName:
+    Description: Name of the templates bucket.
+    Value: !Ref TemplatesBucket

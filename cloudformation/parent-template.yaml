@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Parent stack orchestrating SecureCart phases via nested URLs (networking, compute, data, WAF).
+
+Parameters:
+  Phase1TemplateUrl:
+    Type: String
+    Description: URL to phase1-networking.yaml (e.g., https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase1-networking.yaml)
+
+  Phase2TemplateUrl:
+    Type: String
+    Description: URL to phase2-compute.yaml
+
+  Phase3TemplateUrl:
+    Type: String
+    Description: URL to phase3-data.yaml
+
+  Phase4TemplateUrl:
+    Type: String
+    Description: URL to phase4-waf.yaml
+
+  KeyName:
+    Type: String
+    Default: ''
+    Description: Optional EC2 KeyPair for break-glass SSH. Leave empty to skip (SSM used by default).
+
+  DBMasterName:
+    Type: String
+    Default: admin
+    Description: Master username to store in Secrets Manager; password is generated automatically.
+
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN for the ALB HTTPS listener.
+
+Resources:
+  Phase1Networking:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref Phase1TemplateUrl
+
+  Phase2Compute:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref Phase2TemplateUrl
+      Parameters:
+        KeyName: !Ref KeyName
+        CertificateArn: !Ref CertificateArn
+    DependsOn:
+      - Phase1Networking
+
+  Phase3Data:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref Phase3TemplateUrl
+      Parameters:
+        DBMasterUsername: !Ref DBMasterName
+    DependsOn:
+      - Phase2Compute
+
+  Phase4Waf:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref Phase4TemplateUrl
+    DependsOn:
+      - Phase2Compute
+
+Outputs:
+  AlbDNSName:
+    Description: Public DNS of the Application Load Balancer.
+    Value: !GetAtt Phase2Compute.Outputs.AlbDNSName
+
+  RdsEndpoint:
+    Description: Private RDS endpoint address.
+    Value: !GetAtt Phase3Data.Outputs.RdsEndpointAddress
+
+  AssetsBucketName:
+    Description: Name of the private S3 assets bucket.
+    Value: !GetAtt Phase3Data.Outputs.AssetsBucketName
+
+  DbCredentialsSecretArn:
+    Description: ARN of the Secrets Manager secret with DB master creds.
+    Value: !GetAtt Phase3Data.Outputs.DbCredentialsSecretArn

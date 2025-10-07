@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Compute tier - single private EC2 with SSM, public ALB, and SGs (imports from networking).
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.micro
+
+  KeyName:
+    Type: String
+    Default: ''
+    Description: Optional KeyPair for break-glass SSH. Leave empty to skip (SSM used by default).
+
+  LatestAl2023Ami:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+  
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN for the ALB HTTPS listener.
+
+Conditions:
+  HasKeyName:
+    Fn::Not:
+      - Fn::Equals:
+          - !Ref KeyName
+          - ''
+
+Resources:
+  AlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB public ingress (443).
+      VpcId: !ImportValue SecureCart-Net-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0  
+
+  AppSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: App instance - allow HTTP from ALB only.
+      VpcId: !ImportValue SecureCart-Net-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSg
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Path: /
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+      Path: /
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !ImportValue SecureCart-Net-PublicSubnetA
+        - !ImportValue SecureCart-Net-PublicSubnetB
+      SecurityGroups:
+        - !Ref AlbSg
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !ImportValue SecureCart-Net-VpcId
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: '200,301,302'
+      Targets:
+        - Id: !Ref AppInstance
+          Port: 80
+
+  ListenerHttp:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
+
+  ListenerHttps:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAl2023Ami
+      InstanceType: !Ref InstanceType
+      KeyName: !If [ HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue' ]
+      SubnetId: !ImportValue SecureCart-Net-PrivateSubnetA
+      SecurityGroupIds:
+        - !Ref AppSg
+      IamInstanceProfile: !Ref InstanceProfile
+      MetadataOptions:
+        HttpTokens: required
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -eux
+          dnf -y install nginx
+          echo "<h1>SecureCart - Private EC2 via ALB (SSM enabled)</h1>" > /usr/share/nginx/html/index.html
+          systemctl enable nginx
+          systemctl start nginx
+      Tags:
+        - Key: Name
+          Value: securecart-app-ec2
+
+Outputs:
+  AlbDNSName:
+    Value: !GetAtt Alb.DNSName
+    Export:
+      Name: SecureCart-Compute-AlbDNS
+
+  AlbArn:
+    Value: !Ref Alb
+    Export:
+      Name: SecureCart-Compute-AlbArn
+
+  AppSecurityGroupId:
+    Value: !Ref AppSg
+    Export:
+      Name: SecureCart-Compute-AppSg
+
+  AppInstanceRoleName:
+    Value: !Ref InstanceRole
+    Export:
+      Name: SecureCart-Compute-AppInstanceRoleName

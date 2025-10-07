@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Data layer - private RDS (creds in Secrets Manager) and private S3.
+
+Parameters:
+  DBEngine:
+    Type: String
+    AllowedValues:
+      - mysql
+      - postgres
+    Default: mysql
+
+  DBEngineVersion:
+    Type: String
+    Default: '8.0'
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  DBName:
+    Type: String
+    Default: securecart
+
+  DBMasterUsername:
+    Type: String
+    Default: admin
+    Description: Username stored in the secret; password is generated.
+
+  AssetsBucketPrefix:
+    Type: String
+    Default: securecart-assets
+
+Resources:
+  DbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS - allow from App SG only.
+      VpcId: !ImportValue SecureCart-Net-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !ImportValue SecureCart-Compute-AppSg
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS.
+      SubnetIds:
+        - !ImportValue SecureCart-Net-PrivateSubnetA
+        - !ImportValue SecureCart-Net-PrivateSubnetB
+
+  DbCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub 'securecart-db-credentials-${AWS::AccountId}-${AWS::Region}'
+      Description: Master credentials for SecureCart RDS.
+      GenerateSecretString:
+        SecretStringTemplate: !Sub |
+          {"username":"${DBMasterUsername}"}
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  DbInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: !Ref DBEngine
+      EngineVersion: !Ref DBEngineVersion
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: 20
+      DBName: !Ref DBName
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DbCredentialsSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DbCredentialsSecret}:SecretString:password}}'
+      VPCSecurityGroups:
+        - !Ref DbSg
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      PubliclyAccessible: false
+      MultiAZ: false
+      DeletionProtection: false
+      StorageType: gp3
+      StorageEncrypted: true
+      # KmsKeyId can be omitted to use AWS managed key for RDS automatically.
+      # To force it explicitly, uncomment the next line:
+      # KmsKeyId: alias/aws/rds
+      
+  DbSecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DbCredentialsSecret
+      TargetId: !Ref DbInstance
+      TargetType: AWS::RDS::DBInstance
+
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AssetsBucketPrefix}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  AssetsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AssetsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${AssetsBucket}'
+              - !Sub 'arn:aws:s3:::${AssetsBucket}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  AppBucketPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: securecart-app-readonly-assets
+      Roles:
+        - !ImportValue SecureCart-Compute-AppInstanceRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ListBucket
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource:
+              - !Sub 'arn:aws:s3:::${AssetsBucket}'
+          - Sid: GetandPutObjects
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource:
+              - !Sub 'arn:aws:s3:::${AssetsBucket}/*'
+
+  AppReadDbSecretPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: securecart-app-read-db-secret
+      Roles:
+        - !ImportValue SecureCart-Compute-AppInstanceRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: GetCurrentDbSecret
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource: !Ref DbCredentialsSecret
+            Condition:
+              StringEqualsIfExists:
+                secretsmanager:VersionStage: AWSCURRENT
+
+Outputs:
+  RdsEndpointAddress:
+    Value: !GetAtt DbInstance.Endpoint.Address
+    Export:
+      Name: SecureCart-Data-RdsEndpoint
+
+  DbCredentialsSecretArn:
+    Value: !Ref DbCredentialsSecret
+    Export:
+      Name: SecureCart-Data-DbSecretArn
+
+  AssetsBucketName:
+    Value: !Ref AssetsBucket
+    Export:
+      Name: SecureCart-Data-AssetsBucket
