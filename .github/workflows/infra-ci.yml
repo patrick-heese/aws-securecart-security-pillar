@@ -1,0 +1,28 @@
+name: infra-ci
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'cloudformation/**'
+      - '.github/workflows/infra-ci.yml'
+  workflow_dispatch: {}
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: infra-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-plan:
+    uses: patrick-heese/aws-iac-quality-gate/.github/workflows/reusable-iac-gate.yml@v1
+    with:
+      iac_tool: cloudformation
+      cfn_template: cloudformation/parent-template.yaml
+      cfn_stack_name: cfn-stack-${{ github.run_id }}
+      cfn_capabilities: CAPABILITY_NAMED_IAM
+      cfn_parameter_overrides: file://cloudformation/params.json
+      aws_region: us-east-1
+      aws_role_arn: arn:aws:iam::493233983993:role/GitHubOIDC-Infra
+      apply: false 

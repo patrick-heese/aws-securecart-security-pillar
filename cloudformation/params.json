@@ -1,23 +1,23 @@
 [
   {
     "ParameterKey": "Phase1TemplateUrl",
-    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase1-networking.yaml"
+    "ParameterValue": "https://testingprojects-148524.s3.us-east-1.amazonaws.com/securecart/phase1-networking.yaml"
   },
   {
     "ParameterKey": "Phase2TemplateUrl",
-    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase2-compute.yaml"
+    "ParameterValue": "https://testingprojects-148524.s3.us-east-1.amazonaws.com/securecart/phase2-compute.yaml"
   },
   {
     "ParameterKey": "Phase3TemplateUrl",
-    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase3-data.yaml"
+    "ParameterValue": "https://testingprojects-148524.s3.us-east-1.amazonaws.com/securecart/phase3-data.yaml"
   },
   {
     "ParameterKey": "Phase4TemplateUrl",
-    "ParameterValue": "https://<BUCKET>.s3.<REGION>.amazonaws.com/cfn/phase4-waf.yaml"
+    "ParameterValue": "https://testingprojects-148524.s3.us-east-1.amazonaws.com/securecart/phase4-waf.yaml"
   },
   {
     "ParameterKey": "KeyName",
-    "ParameterValue": ""
+    "ParameterValue": "secureapp-key-pair"
   },
   {
     "ParameterKey": "DBMasterName",
@@ -25,6 +25,6 @@
   },
   {
     "ParameterKey": "CertificateArn",
-    "ParameterValue": "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "ParameterValue": "arn:aws:acm:us-east-1:493233983993:certificate/b325d7ac-16a2-4a78-886d-c97ea165b28d"
   }
 ]

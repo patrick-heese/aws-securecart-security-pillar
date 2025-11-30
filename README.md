@@ -1,13 +1,17 @@
-# SecureCart - Secure Application Deployment on AWS (Security Pillar)
+# SecureCart - Secure Application Deployment on AWS (Security Pillar)  
+ALB→EC2/RDS in private subnets with WAF + managed rules; signals: least-privilege IAM, encrypted at rest/in-transit.  
+
 A security-focused refactor of a deliberately vulnerable e-commerce stack. This project shows how to redesign an internet-exposed environment into a **defense-in-depth** architecture using **AWS-native** controls and **nested CloudFormation**.  
 
 The application is intentionally minimal (an nginx page) so the repo can center on **security**: private subnets, SG chaining, WAF, TLS, Secrets Manager, SSM, VPC endpoints, and encrypted data stores.  
 
-## Architecture Overview
+[![infra-ci](https://github.com/patrick-heese/aws-securecart-security-pillar/actions/workflows/infra-ci.yml/badge.svg)](https://github.com/patrick-heese/aws-securecart-security-pillar/actions/workflows/infra-ci.yml)  
+
+## Architecture Overview  
 ![Architecture Diagram](assets/architecture-diagram.png)  
 *Figure 1: SecureCart - Security-Focused Architecture*  
 
-**Legend (callouts)**  
+### Legend (callouts)  
 1. **WAF** in front of ALB filters common threats (SQLi, bad inputs).  
 2. **Application EC2** in private subnets, reachable only from ALB.  
 3. **RDS** private, reachable only from Application SG (encryption at rest).  
@@ -19,16 +23,16 @@ The application is intentionally minimal (an nginx page) so the repo can center 
 
 > The repo also includes an **insecure baseline** template *(optional)* so you can contrast anti-patterns vs. the **hardened** design.  
 
-## Skills Applied
-- AWS security architecture (VPC segmentation, least-privilege SGs, WAF).  
-- CloudFormation (nested stacks, parameters via S3 template URLs).  
-- IAM design for EC2 (SSM core, bucket-scoped read, scoped `GetSecretValue`).  
-- Runtime secrets via **AWS Secrets Manager** (dynamic references).  
-- **SSM Session Manager** for admin access (no public SSH).  
-- Private connectivity with **VPC endpoints** (S3 gateway; SSM/Secrets/Logs interfaces).  
-- **TLS** at the edge (ALB + ACM) and **encryption at rest** (RDS, S3 SSE-S3).  
+## Skills Applied  
+- Designing AWS security architecture (VPC segmentation, least-privilege SGs, WAF).  
+- Automating infrastructure with **AWS CloudFormation** (nested stacks, S3 TemplateURL parameters).  
+- Scoping least-privilege **IAM** roles for EC2 (SSM core, bucket-scoped read, scoped `secretsmanager:GetSecretValue`).  
+- Referencing secrets dynamically with **AWS Secrets Manager** (dynamic references).  
+- Administering instances via **SSM Session Manager** (no public SSH).  
+- Routing private service access via **VPC endpoints** (S3 Gateway; SSM/Secrets/Logs interfaces).  
+- Terminating **TLS** at the edge (ALB + ACM) and encrypting data at rest (RDS, S3 SSE-S3).  
 
-## Features (security-centric)
+## Features (security-centric)  
 - **Edge protection:** AWS WAF managed rules (Common, Bad Inputs, SQLi).  
 - **Zero public ingress to compute:** EC2 in private subnet, SG allows only ALB → EC2 (HTTP in demo).  
 - **Data layer hardening:** RDS private, SG from Application server only, encryption at rest.  
@@ -36,36 +40,37 @@ The application is intentionally minimal (an nginx page) so the repo can center 
 - **S3 hardening:** Private bucket with TLS-only bucket policy; EC2 role is read-only and bucket-scoped.  
 - **Admin access without SSH:** SSM Session Manager via interface endpoints.  
 
-## Tech Stack
+## Tech Stack  
 - **AWS Services:** VPC, IGW, NAT Gateway, EC2, ALB, WAF, RDS, S3, Secrets Manager, SSM, CloudWatch Logs, VPC Endpoints  
 - **IaC:** AWS CloudFormation (nested stacks)  
 - **Other:** AWS CLI, PowerShell (examples), MariaDB/MySQL client (for DB check)  
 
-## Deployment Instructions
-> **Note:** All examples use `PowerShell` syntax. On bash, replace backticks ``(`)`` with `\` or put args on one line.  
+## Deployment Instructions  
+> **Note:** Many commands are identical across shells; the main differences are line continuation (PowerShell: `` ` `` • Bash: `\` • cmd.exe: `^`), environment variables (PowerShell: `$env:NAME=...` • Bash: `NAME=...` • cmd.exe: `set NAME=...`), and path separators.  
 
-### CloudFormation
+### CloudFormation  
 1. Clone this repository.  
 
 2. Deploy the `s3-bucket.yaml` template to create an S3 bucket for nested CloudFormation templates:  
-   ```powershell
-   cd cloudformation
-   aws cloudformation deploy `
+    ```powershell
+	cd cloudformation
+	aws cloudformation deploy `
 	--stack-name sc-templates-bucket `
 	--template-file s3-bucket.yaml `
 	--parameter-overrides BucketPrefix=securecart-templates
-   ```
-   Grab the bucket name:  
-   
-   ```
-   $TEMPL_BUCKET = (aws cloudformation describe-stacks --stack-name sc-templates-bucket |
+	--tags Project=aws-securecart-security-pillar
+	```
+	
+	Grab the bucket name:  
+	```
+	$TEMPL_BUCKET = (aws cloudformation describe-stacks --stack-name sc-templates-bucket |
 	ConvertFrom-Json).Stacks[0].Outputs |
 	? { $_.OutputKey -eq 'TemplatesBucketName' } |
 	% { $_.OutputValue }
 	```
 
 3. Upload the nested CloudFormation templates to the S3 bucket:  
-	```powershell
+    ```powershell
 	aws s3 cp phase1-networking.yaml s3://$TEMPL_BUCKET/cfn/
 	aws s3 cp phase2-compute.yaml    s3://$TEMPL_BUCKET/cfn/
 	aws s3 cp phase3-data.yaml       s3://$TEMPL_BUCKET/cfn/
@@ -80,27 +85,28 @@ The application is intentionally minimal (an nginx page) so the repo can center 
    - The default values for `PublicSubnet1Cidr`, `PublicSubnet2Cidr`, `PrivateSubnet1Cidr`, and `PrivateSubnet2Cidr`can be edited in the `parent-template.yaml` file. `PublicSubnetB` and `PrivateSubnetB` are included in the `phase1-networking.yaml` file for future high availability use.  
 
 5. Deploy the CloudFormation stack:  
-	```powershell
+    ```powershell
 	aws cloudformation deploy `
 	--stack-name sc-parent `
 	--template-file parent-template.yaml `
 	--parameter-overrides file://params.json `
-	--capabilities CAPABILITY_NAMED_IAM
+	--capabilities CAPABILITY_NAMED_IAM `
+	--tags Project=aws-securecart-security-pillar
 	```
 
-6. *(Optional)* The repo includes `insecure-baseline.yaml` that demonstrates common anti-patterns (public EC2 with 22/80 open, public RDS, public S3, overly-permissive instance role). Deploy separately if you want to compare behaviors; it’s not referenced by the parent template.  
-	```powershell
+6. *(Optional)* The repo includes `insecure-baseline.yaml` that demonstrates common anti-patterns (public EC2 with 22/80 open, public RDS, public S3, overly-permissive instance role). Deploy separately if you want to compare behaviors; it’s not referenced by the parent template. Check `insecure-baseline.yaml` for the exact parameter names and adjust if needed. Create the SSM SecureString parameter `/securecart/db/master_password` to deploy.  
+    ```powershell
 	aws cloudformation deploy `
 	--stack-name sc-insecure `
 	--template-file insecure-baseline.yaml `
-	--parameter-overrides KeyName=<YourKey> DBMasterUsername=admin DBMasterUserPassword=<DemoPassword> `
-	--capabilities CAPABILITY_NAMED_IAM
+	--parameter-overrides KeyName=<YourKey> `
+	--capabilities CAPABILITY_NAMED_IAM `
+	--tags Project=aws-securecart-security-pillar-insecure-baseline
 	```
-	> Check `insecure-baseline.yaml` for the exact parameter names and adjust if needed.  
-	
-**Note:** Ensure the AWS CLI is configured (`aws configure`) with credentials that have sufficient permissions to manage **S3**, **EC2**, **RDS**, **VPCs**, **Subnets**, **Route Tables**, **NAT Gateways**, **IGW**, **ALB**, **Security Groups**, and **IAM resources**.  
 
-## How to Use (Validate Security Controls)
+> **Note**: Ensure the AWS CLI user (`aws configure`) or CloudFormation assumed role has sufficient permissions to manage **S3**, **EC2**, **RDS**, **VPCs**, **Subnets**, **Route Tables**, **NAT Gateways**, **IGW**, **ALB**, **Security Groups**, and **IAM resources**.  
+
+## How to Use (Validate Security Controls)  
 1. **Deploy the infrastructure** using CloudFormation and collect outputs:  
 	```powershell
 	$parent = aws cloudformation describe-stacks --stack-name sc-parent | ConvertFrom-Json
@@ -128,7 +134,7 @@ The application is intentionally minimal (an nginx page) so the repo can center 
 	```
 
 4. **S3 is private to the world, readable from the instance:**  
-	```PowerShell
+	```powershell
 	Invoke-WebRequest -Uri ("https://{0}.s3.{1}.amazonaws.com/hello.txt" -f $Bucket, (aws configure get region)) `
 	-Method GET -ErrorAction SilentlyContinue | Select-Object StatusCode
 	# Expect 403/AccessDenied
@@ -199,46 +205,48 @@ The application is intentionally minimal (an nginx page) so the repo can center 
 ## Project Structure  
 ```plaintext
 aws-securecart-securitypillar
-├── assets/                          	  # Images, diagrams, screenshots
+├── .github/                             
+│   └── workflows/                       
+│       └── infra-ci.yml                  # Caller workflow → reusable IaC Gate
+├── assets/                               # Images, diagrams, screenshots
 │   ├── architecture-diagram.png          # Project architecture diagram
 │   └── application-screenshot.png        # Minimal application screenshot
 ├── cloudformation/                       # CloudFormation templates
-│   ├── parent-template.yaml          	  # Wires phases (nested stacks from S3 URLs)
+│   ├── parent-template.yaml              # Wires phases (nested stacks from S3 URLs)
 │   ├── phase1-networking.yaml            # VPC, subnets, IGW, NAT, endpoints
 │   ├── phase2-compute.yaml               # ALB (HTTP+HTTPS), private EC2, SSM
 │   ├── phase3-data.yaml                  # RDS (private, encrypted), S3 (private), Secrets
 │   ├── phase4-waf.yaml                   # WAFv2 WebACL and ALB association
 │   ├── params.json                       # Parent parameters (Template URLs, Cert ARN, etc.)
-│   ├── s3-bucket.yaml				      # Bucket to host nested templates
-│   └── insecure-baseline.yaml			  # Optional insecure stack (not referenced by parent)
-├── LICENSE
-├── README.md
-└── .gitignore
+│   ├── s3-bucket.yaml                    # Bucket to host nested templates
+│   └── insecure-baseline.yaml            # Optional insecure stack (not referenced by parent)
+├── LICENSE                               
+├── README.md                             
+└── .gitignore                            
 ```  
 
-## Screenshot
-![Application Screenshot](assets/application-screenshot.png)   
-
+## Screenshot  
+![Application Screenshot](assets/application-screenshot.png)  
 *Figure 2: Minimal application page (the focus is the security architecture).*  
 
-## Future Enhancements
+## Future Enhancements  
 - Add **CloudWatch metrics & alarms** for WAF, ALB, EC2, RDS, and S3 access patterns  
 - **TLS to backend** (ALB → EC2) with instance certs and HTTPS target group  
 - **KMS CMK** (customer-managed keys) with rotation for RDS and S3  
 - **CI/CD** (GitHub Actions) to lint/validate CFN and deploy stacks  
-- **Cost tweaks** (reduce NAT egress by adding more endpoints actually used)  
+- **Cost adjustments** (reduce NAT egress by adding more endpoints actually used)  
 
-## License
+## License  
 This project is licensed under the [MIT License](LICENSE).  
 
 ---
 
-## Author
+## Author  
 **Patrick Heese**  
 Cloud Administrator | Aspiring Cloud Engineer/Architect  
 [LinkedIn Profile](https://www.linkedin.com/in/patrick-heese/) | [GitHub Profile](https://github.com/patrick-heese)  
 
-## Acknowledgments
+## Acknowledgments  
 This project was inspired by a course from [techwithlucy](https://github.com/techwithlucy).  
 The architecture diagram included here is my own version, adapted from the original course diagram.  
-I designed and developed all Infrastructure-as-Code (CloudFormation) and project documentation.  
+I designed and developed all Infrastructure as Code (CloudFormation) and project documentation.  

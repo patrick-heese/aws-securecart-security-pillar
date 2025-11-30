@@ -22,10 +22,10 @@ Parameters:
     Type: String
     Default: admin
 
-  DBMasterUserPassword:
+  DBPasswordParameterName:
     Type: String
-    NoEcho: true
-    Description: Demo-only password (INSECURE).
+    Default: /securecart/db/master_password
+    Description: Name of SSM SecureString parameter that stores the RDS master password
 
   BucketNameSuffix:
     Type: String
@@ -167,7 +167,7 @@ Resources:
         - !Ref SgInsecureEc2
       IamInstanceProfile: !Ref InsecureInstanceProfile
       UserData:
-        Fn::Base64: !Sub |
+        Fn::Base64: |
           #!/bin/bash
           set -eux
           dnf -y install nginx
@@ -199,18 +199,21 @@ Resources:
 
   InsecureDb:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       Engine: mysql
-      EngineVersion: '8.0'
+      EngineVersion: '8.0.44'
       DBInstanceClass: db.t3.micro
       AllocatedStorage: 20
       MasterUsername: !Ref DBMasterUsername
-      MasterUserPassword: !Ref DBMasterUserPassword
+      MasterUserPassword: !Sub "{{resolve:ssm-secure:${DBPasswordParameterName}:1}}"
       VPCSecurityGroups:
         - !Ref SgInsecureDb
       DBSubnetGroupName: !Ref DbSubnetGroup
       PubliclyAccessible: true
       DeletionProtection: false
+      BackupRetentionPeriod: 0
 
   InsecureBucket:
     Type: AWS::S3::Bucket
@@ -233,7 +236,7 @@ Resources:
             Effect: Allow
             Principal: '*'
             Action: 's3:GetObject'
-            Resource: !Sub 'arn:aws:s3:::${InsecureBucket}/*'
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${InsecureBucket}/*'
 
 Outputs:
   InsecureEc2PublicIp:

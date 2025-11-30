@@ -35,11 +35,15 @@ Parameters:
 Resources:
   Phase1Networking:
     Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TemplateURL: !Ref Phase1TemplateUrl
 
   Phase2Compute:
     Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TemplateURL: !Ref Phase2TemplateUrl
       Parameters:
@@ -50,6 +54,8 @@ Resources:
 
   Phase3Data:
     Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TemplateURL: !Ref Phase3TemplateUrl
       Parameters:
@@ -59,6 +65,8 @@ Resources:
 
   Phase4Waf:
     Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TemplateURL: !Ref Phase4TemplateUrl
     DependsOn:

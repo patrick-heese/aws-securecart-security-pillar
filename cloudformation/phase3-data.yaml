@@ -11,7 +11,7 @@ Parameters:
 
   DBEngineVersion:
     Type: String
-    Default: '8.0'
+    Default: 8.0.43
 
   DBInstanceClass:
     Type: String
@@ -52,6 +52,8 @@ Resources:
 
   DbCredentialsSecret:
     Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       Name: !Sub 'securecart-db-credentials-${AWS::AccountId}-${AWS::Region}'
       Description: Master credentials for SecureCart RDS.
@@ -119,8 +121,8 @@ Resources:
             Principal: '*'
             Action: 's3:*'
             Resource:
-              - !Sub 'arn:aws:s3:::${AssetsBucket}'
-              - !Sub 'arn:aws:s3:::${AssetsBucket}/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${AssetsBucket}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${AssetsBucket}/*'
             Condition:
               Bool:
                 aws:SecureTransport: 'false'
@@ -139,14 +141,14 @@ Resources:
             Action:
               - s3:ListBucket
             Resource:
-              - !Sub 'arn:aws:s3:::${AssetsBucket}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${AssetsBucket}'
           - Sid: GetandPutObjects
             Effect: Allow
             Action:
               - s3:GetObject
               - s3:PutObject
             Resource:
-              - !Sub 'arn:aws:s3:::${AssetsBucket}/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${AssetsBucket}/*'
 
   AppReadDbSecretPolicy:
     Type: AWS::IAM::Policy
